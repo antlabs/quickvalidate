@@ -122,6 +122,28 @@ func (s *{{ .Name }}) Validate() error {
 			Namespace: "{{ $.Name }}.{{ $fieldName }}",
 		})
 	}
+	{{ else if eq .Name "gt" }}
+	// Validate {{ $fieldName }} is greater than {{ .Params }}
+	if {{ $.GenerateGtCheck $fieldName .Type .Params }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "gt",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "gte" }}
+	// Validate {{ $fieldName }} is greater than or equal to {{ .Params }}
+	if {{ $.GenerateGteCheck $fieldName .Type .Params }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "gte",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
 	{{ else if eq .Name "oneof" }}
 	// Validate {{ $fieldName }} is one of {{ .Params }}
 	if {{ $.GenerateOneOfCheck $fieldName .Params }} {
@@ -158,7 +180,7 @@ func (s *{{ .Name }}) Validate() error {
 			}
 		}
 	}
-	{{ else if .IsMap }}
+	{{- else if .IsMap }}
 	for key, elem := range s.{{ $fieldName }} {
 		if elem != nil {
 			if err := elem.Validate(); err != nil {
@@ -171,9 +193,10 @@ func (s *{{ .Name }}) Validate() error {
 			}
 		}
 	}
-	{{ end }}
-	{{ end }}
-	{{ end }}
+	{{- end }}
+	{{- end }}
+	{{- end }}
+	{{- end }}
 
 	if len(errs) > 0 {
 		return errs
@@ -227,6 +250,30 @@ func (s *{{ .Name }}) Validate() error {
 				return "false"
 			}
 		},
+		"GenerateGtCheck": func(fieldName, fieldType, gtVal string) string {
+			switch {
+			case strings.HasPrefix(fieldType, "string"):
+				return fmt.Sprintf("len(s.%s) <= %s", fieldName, gtVal)
+			case strings.HasPrefix(fieldType, "int") || strings.HasPrefix(fieldType, "uint") || strings.HasPrefix(fieldType, "float"):
+				return fmt.Sprintf("s.%s <= %s", fieldName, gtVal)
+			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
+				return fmt.Sprintf("len(s.%s) <= %s", fieldName, gtVal)
+			default:
+				return "false"
+			}
+		},
+		"GenerateGteCheck": func(fieldName, fieldType, gteVal string) string {
+			switch {
+			case strings.HasPrefix(fieldType, "string"):
+				return fmt.Sprintf("len(s.%s) < %s", fieldName, gteVal)
+			case strings.HasPrefix(fieldType, "int") || strings.HasPrefix(fieldType, "uint") || strings.HasPrefix(fieldType, "float"):
+				return fmt.Sprintf("s.%s < %s", fieldName, gteVal)
+			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
+				return fmt.Sprintf("len(s.%s) < %s", fieldName, gteVal)
+			default:
+				return "false"
+			}
+		},
 		"GenerateOneOfCheck": func(fieldName, values string) string {
 			g.Imports["strings"] = true
 			return fmt.Sprintf("!isOneOf(s.%s, []string{%s})", fieldName, formatOneOfValues(values))
@@ -241,11 +288,27 @@ func (s *{{ .Name }}) Validate() error {
 
 	var buf bytes.Buffer
 	err := tmpl.Execute(&buf, struct {
-		Name   string
-		Fields []parser.FieldInfo
+		Name                 string
+		Fields               []parser.FieldInfo
+		GenerateRequiredCheck func(string, string) string
+		GenerateEmailCheck    func(string) string
+		GenerateMinCheck      func(string, string, string) string
+		GenerateMaxCheck      func(string, string, string) string
+		GenerateGtCheck       func(string, string, string) string
+		GenerateGteCheck      func(string, string, string) string
+		GenerateOneOfCheck    func(string, string) string
+		GenerateURLCheck      func(string) string
 	}{
-		Name:   structInfo.Name,
-		Fields: structInfo.Fields,
+		Name:                 structInfo.Name,
+		Fields:               structInfo.Fields,
+		GenerateRequiredCheck: funcMap["GenerateRequiredCheck"].(func(string, string) string),
+		GenerateEmailCheck:    funcMap["GenerateEmailCheck"].(func(string) string),
+		GenerateMinCheck:      funcMap["GenerateMinCheck"].(func(string, string, string) string),
+		GenerateMaxCheck:      funcMap["GenerateMaxCheck"].(func(string, string, string) string),
+		GenerateGtCheck:       funcMap["GenerateGtCheck"].(func(string, string, string) string),
+		GenerateGteCheck:      funcMap["GenerateGteCheck"].(func(string, string, string) string),
+		GenerateOneOfCheck:    funcMap["GenerateOneOfCheck"].(func(string, string) string),
+		GenerateURLCheck:      funcMap["GenerateURLCheck"].(func(string) string),
 	})
 	if err != nil {
 		return "", err
