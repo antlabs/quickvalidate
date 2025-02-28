@@ -7,9 +7,9 @@
 ### 数值比较验证器
 - [x] `gt` (greater than) - 大于
 - [x] `gte` (greater than or equal) - 大于等于
-- [ ] `lt` (less than) - 小于
-- [ ] `lte` (less than or equal) - 小于等于
-- [ ] `eq` (equal) - 等于
+- [x] `lt` (less than) - 小于
+- [x] `lte` (less than or equal) - 小于等于
+- [x] `eq` (equal) - 等于
 
 ## 优先级中
 

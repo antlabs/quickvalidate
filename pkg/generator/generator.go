@@ -72,139 +72,6 @@ func (g *Generator) addRequiredImports() {
 
 // generateStructValidator generates validation code for a struct
 func (g *Generator) generateStructValidator(structInfo parser.StructInfo) (string, error) {
-	tmpl := template.Must(template.New("structValidator").Parse(`
-// Validate validates the {{ .Name }} struct
-func (s *{{ .Name }}) Validate() error {
-	var errs errors.ValidationErrors
-
-	{{ range .Fields }}
-	{{ $fieldName := .Name }}
-	{{ range .Tags }}
-	{{ if eq .Name "required" }}
-	// Validate {{ $fieldName }} is required
-	if {{ $.GenerateRequiredCheck $fieldName .Type }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "required",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "email" }}
-	// Validate {{ $fieldName }} is a valid email
-	if s.{{ $fieldName }} != "" && !{{ $.GenerateEmailCheck $fieldName }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "email",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "min" }}
-	// Validate {{ $fieldName }} is at least {{ .Params }}
-	if {{ $.GenerateMinCheck $fieldName .Type .Params }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "min",
-			Param: "{{ .Params }}",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "max" }}
-	// Validate {{ $fieldName }} is at most {{ .Params }}
-	if {{ $.GenerateMaxCheck $fieldName .Type .Params }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "max",
-			Param: "{{ .Params }}",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "gt" }}
-	// Validate {{ $fieldName }} is greater than {{ .Params }}
-	if {{ $.GenerateGtCheck $fieldName .Type .Params }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "gt",
-			Param: "{{ .Params }}",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "gte" }}
-	// Validate {{ $fieldName }} is greater than or equal to {{ .Params }}
-	if {{ $.GenerateGteCheck $fieldName .Type .Params }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "gte",
-			Param: "{{ .Params }}",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "oneof" }}
-	// Validate {{ $fieldName }} is one of {{ .Params }}
-	if {{ $.GenerateOneOfCheck $fieldName .Params }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "oneof",
-			Param: "{{ .Params }}",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "url" }}
-	// Validate {{ $fieldName }} is a valid URL
-	if s.{{ $fieldName }} != "" && !{{ $.GenerateURLCheck $fieldName }} {
-		errs = append(errs, errors.ValidationError{
-			Field: "{{ $fieldName }}",
-			Tag: "url",
-			Value: s.{{ $fieldName }},
-			Namespace: "{{ $.Name }}.{{ $fieldName }}",
-		})
-	}
-	{{ else if eq .Name "dive" }}
-	// Validate {{ $fieldName }} elements
-	{{ if .IsSlice }}
-	for i, elem := range s.{{ $fieldName }} {
-		if elem != nil {
-			if err := elem.Validate(); err != nil {
-				if valErrs, ok := err.(errors.ValidationErrors); ok {
-					for _, valErr := range valErrs {
-						valErr.Namespace = fmt.Sprintf("{{ $.Name }}.{{ $fieldName }}[%d].%s", i, valErr.Field)
-						errs = append(errs, valErr)
-					}
-				}
-			}
-		}
-	}
-	{{- else if .IsMap }}
-	for key, elem := range s.{{ $fieldName }} {
-		if elem != nil {
-			if err := elem.Validate(); err != nil {
-				if valErrs, ok := err.(errors.ValidationErrors); ok {
-					for _, valErr := range valErrs {
-						valErr.Namespace = fmt.Sprintf("{{ $.Name }}.{{ $fieldName }}[%v].%s", key, valErr.Field)
-						errs = append(errs, valErr)
-					}
-				}
-			}
-		}
-	}
-	{{- end }}
-	{{- end }}
-	{{- end }}
-	{{- end }}
-
-	if len(errs) > 0 {
-		return errs
-	}
-	return nil
-}
-`))
-
 	funcMap := template.FuncMap{
 		"GenerateRequiredCheck": func(fieldName, fieldType string) string {
 			switch {
@@ -216,15 +83,18 @@ func (s *{{ .Name }}) Validate() error {
 				return fmt.Sprintf("!s.%s", fieldName)
 			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
 				return fmt.Sprintf("len(s.%s) == 0", fieldName)
-			case strings.HasPrefix(fieldType, "*"):
-				return fmt.Sprintf("s.%s == nil", fieldName)
 			default:
+				g.Imports["reflect"] = true
 				return fmt.Sprintf("reflect.ValueOf(s.%s).IsZero()", fieldName)
 			}
 		},
 		"GenerateEmailCheck": func(fieldName string) string {
 			g.Imports["regexp"] = true
 			return fmt.Sprintf("emailRegex.MatchString(s.%s)", fieldName)
+		},
+		"GenerateURLCheck": func(fieldName string) string {
+			g.Imports["net/url"] = true
+			return fmt.Sprintf("isValidURL(s.%s)", fieldName)
 		},
 		"GenerateMinCheck": func(fieldName, fieldType, minVal string) string {
 			switch {
@@ -253,11 +123,11 @@ func (s *{{ .Name }}) Validate() error {
 		"GenerateGtCheck": func(fieldName, fieldType, gtVal string) string {
 			switch {
 			case strings.HasPrefix(fieldType, "string"):
-				return fmt.Sprintf("len(s.%s) <= %s", fieldName, gtVal)
+				return fmt.Sprintf("len(s.%s) > %s", fieldName, gtVal)
 			case strings.HasPrefix(fieldType, "int") || strings.HasPrefix(fieldType, "uint") || strings.HasPrefix(fieldType, "float"):
-				return fmt.Sprintf("s.%s <= %s", fieldName, gtVal)
+				return fmt.Sprintf("s.%s > %s", fieldName, gtVal)
 			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
-				return fmt.Sprintf("len(s.%s) <= %s", fieldName, gtVal)
+				return fmt.Sprintf("len(s.%s) > %s", fieldName, gtVal)
 			default:
 				return "false"
 			}
@@ -265,51 +135,237 @@ func (s *{{ .Name }}) Validate() error {
 		"GenerateGteCheck": func(fieldName, fieldType, gteVal string) string {
 			switch {
 			case strings.HasPrefix(fieldType, "string"):
-				return fmt.Sprintf("len(s.%s) < %s", fieldName, gteVal)
+				return fmt.Sprintf("len(s.%s) >= %s", fieldName, gteVal)
 			case strings.HasPrefix(fieldType, "int") || strings.HasPrefix(fieldType, "uint") || strings.HasPrefix(fieldType, "float"):
-				return fmt.Sprintf("s.%s < %s", fieldName, gteVal)
+				return fmt.Sprintf("s.%s >= %s", fieldName, gteVal)
 			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
-				return fmt.Sprintf("len(s.%s) < %s", fieldName, gteVal)
+				return fmt.Sprintf("len(s.%s) >= %s", fieldName, gteVal)
 			default:
 				return "false"
+			}
+		},
+		"GenerateLtCheck": func(fieldName, fieldType, ltVal string) string {
+			switch {
+			case strings.HasPrefix(fieldType, "string"):
+				return fmt.Sprintf("len(s.%s) < %s", fieldName, ltVal)
+			case strings.HasPrefix(fieldType, "int") || strings.HasPrefix(fieldType, "uint") || strings.HasPrefix(fieldType, "float"):
+				return fmt.Sprintf("s.%s < %s", fieldName, ltVal)
+			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
+				return fmt.Sprintf("len(s.%s) < %s", fieldName, ltVal)
+			default:
+				return "false"
+			}
+		},
+		"GenerateLteCheck": func(fieldName, fieldType, lteVal string) string {
+			switch {
+			case strings.HasPrefix(fieldType, "string"):
+				return fmt.Sprintf("len(s.%s) <= %s", fieldName, lteVal)
+			case strings.HasPrefix(fieldType, "int") || strings.HasPrefix(fieldType, "uint") || strings.HasPrefix(fieldType, "float"):
+				return fmt.Sprintf("s.%s <= %s", fieldName, lteVal)
+			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
+				return fmt.Sprintf("len(s.%s) <= %s", fieldName, lteVal)
+			default:
+				return "false"
+			}
+		},
+		"GenerateEqCheck": func(fieldName, fieldType, eqVal string) string {
+			switch {
+			case strings.HasPrefix(fieldType, "string"):
+				return fmt.Sprintf("s.%s != %q", fieldName, eqVal)
+			case strings.HasPrefix(fieldType, "int") || strings.HasPrefix(fieldType, "uint") || strings.HasPrefix(fieldType, "float"):
+				return fmt.Sprintf("s.%s != %s", fieldName, eqVal)
+			case strings.HasPrefix(fieldType, "bool"):
+				boolVal := "false"
+				if eqVal == "true" || eqVal == "1" {
+					boolVal = "true"
+				}
+				return fmt.Sprintf("s.%s != %s", fieldName, boolVal)
+			case strings.HasPrefix(fieldType, "[]") || strings.HasPrefix(fieldType, "map["):
+				return fmt.Sprintf("len(s.%s) != %s", fieldName, eqVal)
+			default:
+				g.Imports["reflect"] = true
+				return fmt.Sprintf("!reflect.DeepEqual(s.%s, %s)", fieldName, eqVal)
 			}
 		},
 		"GenerateOneOfCheck": func(fieldName, values string) string {
 			g.Imports["strings"] = true
 			return fmt.Sprintf("!isOneOf(s.%s, []string{%s})", fieldName, formatOneOfValues(values))
 		},
-		"GenerateURLCheck": func(fieldName string) string {
-			g.Imports["net/url"] = true
-			return fmt.Sprintf("isValidURL(s.%s)", fieldName)
-		},
 	}
 
-	tmpl = tmpl.Funcs(funcMap)
+	tmpl := template.New("structValidator").Funcs(funcMap)
+	tmpl, err := tmpl.Parse(`
+// Validate validates the {{ .Name }} struct
+func (s *{{ .Name }}) Validate() error {
+	var errs errors.ValidationErrors
+
+	{{ range .Fields }}
+	{{ $fieldName := .Name }}
+	{{ $fieldType := .Type }}
+	{{ range .Tags }}
+	{{ if eq .Name "required" }}
+	// Validate {{ $fieldName }} is required
+	if {{ GenerateRequiredCheck $fieldName $fieldType }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "required",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "email" }}
+	// Validate {{ $fieldName }} is a valid email
+	if s.{{ $fieldName }} != "" && !{{ GenerateEmailCheck $fieldName }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "email",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "min" }}
+	// Validate {{ $fieldName }} is at least {{ .Params }}
+	if {{ GenerateMinCheck $fieldName $fieldType .Params }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "min",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "max" }}
+	// Validate {{ $fieldName }} is at most {{ .Params }}
+	if {{ GenerateMaxCheck $fieldName $fieldType .Params }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "max",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "gt" }}
+	// Validate {{ $fieldName }} is greater than {{ .Params }}
+	if !({{ GenerateGtCheck $fieldName $fieldType .Params }}) {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "gt",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "gte" }}
+	// Validate {{ $fieldName }} is greater than or equal to {{ .Params }}
+	if !({{ GenerateGteCheck $fieldName $fieldType .Params }}) {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "gte",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "lt" }}
+	// Validate {{ $fieldName }} is less than {{ .Params }}
+	if !({{ GenerateLtCheck $fieldName $fieldType .Params }}) {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "lt",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "lte" }}
+	// Validate {{ $fieldName }} is less than or equal to {{ .Params }}
+	if !({{ GenerateLteCheck $fieldName $fieldType .Params }}) {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "lte",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "eq" }}
+	// Validate {{ $fieldName }} is equal to {{ .Params }}
+	if {{ GenerateEqCheck $fieldName $fieldType .Params }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "eq",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "oneof" }}
+	// Validate {{ $fieldName }} is one of {{ .Params }}
+	if {{ GenerateOneOfCheck $fieldName .Params }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "oneof",
+			Param: "{{ .Params }}",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "url" }}
+	// Validate {{ $fieldName }} is a valid URL
+	if s.{{ $fieldName }} != "" && !{{ GenerateURLCheck $fieldName }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "url",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
+	{{ else if eq .Name "dive" }}
+	// Validate {{ $fieldName }} elements
+	{{ if $.IsSlice }}
+	for i, elem := range s.{{ $fieldName }} {
+		if elem != nil {
+			if err := elem.Validate(); err != nil {
+				if valErrs, ok := err.(errors.ValidationErrors); ok {
+					for _, valErr := range valErrs {
+						valErr.Namespace = fmt.Sprintf("{{ $.Name }}.{{ $fieldName }}[%d].%s", i, valErr.Field)
+						errs = append(errs, valErr)
+					}
+				}
+			}
+		}
+	}
+	{{ else if $.IsMap }}
+	for key, elem := range s.{{ $fieldName }} {
+		if elem != nil {
+			if err := elem.Validate(); err != nil {
+				if valErrs, ok := err.(errors.ValidationErrors); ok {
+					for _, valErr := range valErrs {
+						valErr.Namespace = fmt.Sprintf("{{ $.Name }}.{{ $fieldName }}[%v].%s", key, valErr.Field)
+						errs = append(errs, valErr)
+					}
+				}
+			}
+		}
+	}
+	{{ end }}
+	{{ end }}
+	{{ end }}
+	{{ end }}
+
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+`)
+	if err != nil {
+		return "", err
+	}
 
 	var buf bytes.Buffer
-	err := tmpl.Execute(&buf, struct {
-		Name                 string
-		Fields               []parser.FieldInfo
-		GenerateRequiredCheck func(string, string) string
-		GenerateEmailCheck    func(string) string
-		GenerateMinCheck      func(string, string, string) string
-		GenerateMaxCheck      func(string, string, string) string
-		GenerateGtCheck       func(string, string, string) string
-		GenerateGteCheck      func(string, string, string) string
-		GenerateOneOfCheck    func(string, string) string
-		GenerateURLCheck      func(string) string
-	}{
-		Name:                 structInfo.Name,
-		Fields:               structInfo.Fields,
-		GenerateRequiredCheck: funcMap["GenerateRequiredCheck"].(func(string, string) string),
-		GenerateEmailCheck:    funcMap["GenerateEmailCheck"].(func(string) string),
-		GenerateMinCheck:      funcMap["GenerateMinCheck"].(func(string, string, string) string),
-		GenerateMaxCheck:      funcMap["GenerateMaxCheck"].(func(string, string, string) string),
-		GenerateGtCheck:       funcMap["GenerateGtCheck"].(func(string, string, string) string),
-		GenerateGteCheck:      funcMap["GenerateGteCheck"].(func(string, string, string) string),
-		GenerateOneOfCheck:    funcMap["GenerateOneOfCheck"].(func(string, string) string),
-		GenerateURLCheck:      funcMap["GenerateURLCheck"].(func(string) string),
-	})
+	err = tmpl.Execute(&buf, structInfo)
 	if err != nil {
 		return "", err
 	}
