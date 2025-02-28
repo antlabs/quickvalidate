@@ -1,5 +1,7 @@
 # QuickValidate
 
+[English](README.md) | [中文](README_zh.md)
+
 QuickValidate is a static code generation version of the popular [go-playground/validator](https://github.com/go-playground/validator) library. It generates Go code for validation at build time instead of using reflection at runtime, which significantly improves performance.
 
 ## Features
@@ -10,6 +12,7 @@ QuickValidate is a static code generation version of the popular [go-playground/
 - No runtime reflection overhead
 - Type-safe validation
 - Compile-time validation errors
+- Supports common validation tags: required, email, url, oneof, min/max, etc.
 
 ## Installation
 
@@ -29,6 +32,7 @@ type User struct {
     Email          string     `validate:"required,email"`
     Gender         string     `validate:"oneof=male female prefer_not_to"`
     FavouriteColor string     `validate:"iscolor"`
+    Website        string     `validate:"url"`
     Addresses      []*Address `validate:"required,dive,required"`
 }
 

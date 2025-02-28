@@ -15,6 +15,7 @@ type User struct {
 	Email          string     `validate:"required,email"`
 	Gender         string     `validate:"oneof=male female prefer_not_to"`
 	FavouriteColor string     `validate:"iscolor"`
+	Website        string     `validate:"url"`
 	Addresses      []*Address `validate:"required,dive,required"`
 }
 
@@ -54,6 +55,7 @@ func main() {
 		Gender:    "male",
 		Email:     "Badger.Smith@gmail", // Invalid email - validation error
 		// FavouriteColor is missing - validation error
+		Website:    "invalid-website", // Invalid website - validation error
 		Addresses: []*Address{address},
 	}
 
@@ -69,6 +71,7 @@ func main() {
 	user.Age = 35
 	user.Email = "Badger.Smith@gmail.com"
 	user.FavouriteColor = "#00ff00"
+	user.Website = "https://www.example.com"
 	address.City = "New Mombasa"
 
 	// Validate again

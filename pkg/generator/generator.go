@@ -67,6 +67,7 @@ func (g *Generator) addRequiredImports() {
 	g.Imports["regexp"] = true
 	g.Imports["strings"] = true
 	g.Imports["reflect"] = true
+	g.Imports["net/url"] = true
 }
 
 // generateStructValidator generates validation code for a struct
@@ -132,6 +133,16 @@ func (s *{{ .Name }}) Validate() error {
 			Namespace: "{{ $.Name }}.{{ $fieldName }}",
 		})
 	}
+	{{ else if eq .Name "url" }}
+	// Validate {{ $fieldName }} is a valid URL
+	if s.{{ $fieldName }} != "" && !{{ $.GenerateURLCheck $fieldName }} {
+		errs = append(errs, errors.ValidationError{
+			Field: "{{ $fieldName }}",
+			Tag: "url",
+			Value: s.{{ $fieldName }},
+			Namespace: "{{ $.Name }}.{{ $fieldName }}",
+		})
+	}
 	{{ else if eq .Name "dive" }}
 	// Validate {{ $fieldName }} elements
 	{{ if .IsSlice }}
@@ -160,7 +171,6 @@ func (s *{{ .Name }}) Validate() error {
 			}
 		}
 	}
-	{{ end }}
 	{{ end }}
 	{{ end }}
 	{{ end }}
@@ -221,6 +231,10 @@ func (s *{{ .Name }}) Validate() error {
 			g.Imports["strings"] = true
 			return fmt.Sprintf("!isOneOf(s.%s, []string{%s})", fieldName, formatOneOfValues(values))
 		},
+		"GenerateURLCheck": func(fieldName string) string {
+			g.Imports["net/url"] = true
+			return fmt.Sprintf("isValidURL(s.%s)", fieldName)
+		},
 	}
 
 	tmpl = tmpl.Funcs(funcMap)
@@ -248,6 +262,11 @@ func isOneOf(value string, allowedValues []string) bool {
 		}
 	}
 	return false
+}
+
+func isValidURL(str string) bool {
+	u, err := url.Parse(str)
+	return err == nil && u.Scheme != "" && u.Host != ""
 }
 `
 

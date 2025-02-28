@@ -101,26 +101,26 @@ func ParseFile(filePath string) ([]StructInfo, error) {
 // parseTagPart parses a single validation tag part
 func parseTagPart(part string) TagInfo {
 	tagInfo := TagInfo{}
-	
+
 	if part == "required" {
 		tagInfo.Name = "required"
 		tagInfo.IsRequired = true
 		return tagInfo
 	}
-	
+
 	if part == "dive" {
 		tagInfo.Name = "dive"
 		tagInfo.IsDive = true
 		return tagInfo
 	}
-	
+
 	if idx := strings.Index(part, "="); idx != -1 {
 		tagInfo.Name = part[:idx]
 		tagInfo.Params = part[idx+1:]
 	} else {
 		tagInfo.Name = part
 	}
-	
+
 	return tagInfo
 }
 
@@ -170,17 +170,17 @@ func getElemType(fieldType string) string {
 	if isSliceType(fieldType) {
 		return strings.TrimPrefix(strings.TrimPrefix(fieldType, "[]"), "[N]")
 	}
-	
+
 	if isMapType(fieldType) {
 		parts := strings.SplitN(fieldType, "]", 2)
 		if len(parts) > 1 {
 			return parts[1]
 		}
 	}
-	
+
 	if isPtrType(fieldType) {
 		return strings.TrimPrefix(fieldType, "*")
 	}
-	
+
 	return fieldType
 }
