@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	
-	"github.com/go-playground/validator/v10"
 )
 
 // User contains user information
@@ -27,18 +25,6 @@ type Address struct {
 	Phone  string `validate:"required"`
 }
 
-// Validate validates the Address struct
-func (a *Address) Validate() error {
-	validate := validator.New()
-	return validate.Struct(a)
-}
-
-// Validate validates the User struct
-func (u *User) Validate() error {
-	validate := validator.New()
-	return validate.Struct(u)
-}
-
 func main() {
 	// Create a user with validation errors
 	address := &Address{
@@ -55,7 +41,7 @@ func main() {
 		Gender:    "male",
 		Email:     "Badger.Smith@gmail", // Invalid email - validation error
 		// FavouriteColor is missing - validation error
-		Website:    "invalid-website", // Invalid website - validation error
+		Website:   "invalid-website", // Invalid website - validation error
 		Addresses: []*Address{address},
 	}
 

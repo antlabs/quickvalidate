@@ -12,15 +12,15 @@ type ValidationErrors []ValidationError
 // Error returns a string representation of the ValidationErrors
 func (ve ValidationErrors) Error() string {
 	buff := bytes.NewBufferString("")
-	
+
 	for i, err := range ve {
 		if i > 0 {
 			buff.WriteString(", ")
 		}
-		
+
 		buff.WriteString(err.Error())
 	}
-	
+
 	return buff.String()
 }
 
@@ -31,11 +31,21 @@ type ValidationError struct {
 	Tag       string
 	Param     string
 	Namespace string
+	// ActualTag is the tag as it was written, with an alias replaced by what it
+	// expands to (the reference reports the expansion for aliases).
+	ActualTag string
+	// StructNamespace is the same path as Namespace. The two only diverge in the
+	// reference when a TagNameFunc is registered, which the generator does not
+	// support, so they are always equal here.
+	StructNamespace string
+	// Kind is the kind of the value that failed, after unwrapping pointers that
+	// are not nil. A nil pointer reports "ptr".
+	Kind reflect.Kind
 }
 
 // Error returns a string representation of the ValidationError
 func (e ValidationError) Error() string {
-	return fmt.Sprintf("Field validation for '%s' failed on the '%s' tag with value '%v'", 
+	return fmt.Sprintf("Field validation for '%s' failed on the '%s' tag with value '%v'",
 		e.Field, e.Tag, e.Value)
 }
 
@@ -74,6 +84,6 @@ func (e *InvalidValidationError) Error() string {
 	if e.Type == nil {
 		return "quickvalidate: Invalid validation input"
 	}
-	
+
 	return fmt.Sprintf("quickvalidate: Invalid validation input type %s", e.Type)
 }

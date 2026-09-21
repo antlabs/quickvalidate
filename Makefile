@@ -1,4 +1,4 @@
-.PHONY: all build clean test lint examples benchmark simple install
+.PHONY: all build clean test lint examples benchmark simple align generate install
 
 # Go parameters
 GOCMD=go
@@ -45,10 +45,16 @@ simple:
 benchmark:
 	$(GOCMD) run ./examples/benchmark
 
-# Generate validation code for examples
-generate:
-	./$(BINARY_NAME) -i ./examples/simple/main.go -o ./examples/simple/validate_gen.go -pkg main
-	./$(BINARY_NAME) -i ./examples/benchmark/main.go -o ./examples/benchmark/validate_gen.go -pkg main
+# Run the differential alignment suite: generated code vs go-playground/validator
+align: build
+	$(GOTEST) -count=1 ./internal/align/
+
+# Generate validation code for every package that needs it
+generate: build
+	./$(BINARY_NAME) -i ./examples/simple -o ./examples/simple/validate_gen.go
+	./$(BINARY_NAME) -i ./examples/numeric -o ./examples/numeric/validate_gen.go
+	./$(BINARY_NAME) -i ./examples/benchmark -o ./examples/benchmark/validate_gen.go
+	./$(BINARY_NAME) -i ./internal/align -o ./internal/align/validate_gen.go -pkg align
 
 # Install the binary
 install:
@@ -70,7 +76,8 @@ help:
 	@echo "  examples   - Run all examples"
 	@echo "  simple     - Run simple example"
 	@echo "  benchmark  - Run benchmark example"
-	@echo "  generate   - Generate validation code for examples"
+	@echo "  align      - Run the differential alignment suite"
+	@echo "  generate   - Regenerate validation code for examples and corpus"
 	@echo "  install    - Install the binary"
 	@echo "  deps       - Update dependencies"
 	@echo "  help       - Show this help message"

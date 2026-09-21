@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,6 @@ func main() {
 		outputPath string
 		pkgName    string
 	)
-
 	flag.StringVar(&inputPath, "i", "", "Input file or directory path")
 	flag.StringVar(&outputPath, "o", "", "Output file path")
 	flag.StringVar(&pkgName, "pkg", "", "Package name (default: derived from input path)")
@@ -29,65 +27,56 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-
 	if outputPath == "" {
 		fmt.Println("Error: Output path is required")
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	// Get file paths to process
-	filePaths, err := getFilePaths(inputPath)
+	paths, err := getFilePaths(inputPath)
 	if err != nil {
 		fmt.Printf("Error getting file paths: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Parse files
-	var allStructs []parser.StructInfo
-	for _, filePath := range filePaths {
-		structs, err := parser.ParseFile(filePath)
-		if err != nil {
-			fmt.Printf("Error parsing file %s: %v\n", filePath, err)
-			continue
-		}
-		allStructs = append(allStructs, structs...)
+	pkg, err := parser.ParseFiles(paths, nil)
+	if err != nil {
+		fmt.Printf("Error parsing input: %v\n", err)
+		os.Exit(1)
+	}
+	if pkgName != "" {
+		pkg.Name = pkgName
+	}
+	if pkg.Name == "" {
+		pkg.Name = derivePackageName(inputPath)
 	}
 
-	if len(allStructs) == 0 {
+	if len(pkg.Structs) == 0 {
 		fmt.Println("No structs with validation tags found")
 		os.Exit(1)
 	}
 
-	// Determine package name if not provided
-	if pkgName == "" {
-		if stat, err := os.Stat(inputPath); err == nil && stat.IsDir() {
-			pkgName = filepath.Base(inputPath)
-		} else {
-			dir := filepath.Dir(inputPath)
-			pkgName = filepath.Base(dir)
-		}
-	}
-
-	// Generate validation code
-	gen := generator.NewGenerator(pkgName, allStructs)
-	code, err := gen.Generate()
+	code, err := generator.NewGenerator(pkg).Generate()
 	if err != nil {
 		fmt.Printf("Error generating code: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Write to output file
-	err = ioutil.WriteFile(outputPath, code, 0644)
-	if err != nil {
-		fmt.Printf("Error writing to output file: %v\n", err)
+	if err := os.WriteFile(outputPath, code, 0o644); err != nil {
+		fmt.Printf("Error writing output file: %v\n", err)
 		os.Exit(1)
 	}
-
 	fmt.Printf("Successfully generated validation code to %s\n", outputPath)
 }
 
-// getFilePaths returns a list of Go files to process
+func derivePackageName(path string) string {
+	if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+		return filepath.Base(path)
+	}
+	return filepath.Base(filepath.Dir(path))
+}
+
+// getFilePaths returns the Go files to process, skipping generated files.
 func getFilePaths(path string) ([]string, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
@@ -101,16 +90,20 @@ func getFilePaths(path string) ([]string, error) {
 		return nil, fmt.Errorf("input file must be a Go file")
 	}
 
-	var filePaths []string
-	err = filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+	var paths []string
+	err = filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			filePaths = append(filePaths, path)
+		name := info.Name()
+		if info.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
 		}
+		if strings.HasSuffix(name, "_gen.go") {
+			return nil
+		}
+		paths = append(paths, p)
 		return nil
 	})
-
-	return filePaths, err
+	return paths, err
 }
